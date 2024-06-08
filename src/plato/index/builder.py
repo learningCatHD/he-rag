@@ -34,26 +34,19 @@ class IndexBuilder:
             messages=[HumanMessage(content=self._summary_template.apply(text=text))],
         )
 
-    def _get_document(self, data: Dict[str, Any]) -> "Document":
-        return  Document(
-            content ='\n'.join(data['content']) if isinstance(data['content'], list) else data['content'],
-            header=data.get("header", ""),
-            summary=data.get("summary", ""),
-            questions=data.get("questions", []),
-            answers=data.get("answers", []),
-            ground_truth=data.get("ground_truth", [])
-         )
-
-    def _get_roadmap(self, data: Dict[str, Any]) -> "Roadmap":
-        return Roadmap(
-            roadmap_qa_text = data.get("roadmap_qa_text", ""),
-            roadmap_summary_text = data.get("roadmap_summary_text", ""),
-            summary=data.get("summary", ""),
-            title=data.get("title", ""),
-            questions=data.get("questions", []),
-            steps=data.get("steps", "")            
-        )
-
+    def _get_documents(self, data: List[Dict[str, Any]]) -> "Document":
+        documents  = []
+        for item in data:
+            documents.append(Document(
+            content ='\n'.join(item['content']) if isinstance(item['content'], list) else item['content'],
+            header=item.get("header", ""),
+            summary=item.get("summary", ""),
+            questions=item.get("questions", []),
+            answers=item.get("answers", []),
+            ground_truth=item.get("ground_truth", [])
+         ))
+        return documents
+            
     def _create_index(self, entries: Sequence[Tuple[str, "DocIndex"]], index_name: str) -> None:
         texts, data = zip(*entries)
         AutoVectorStore[DocIndex].create(name=index_name, texts=texts, data=data, drop_old=False)
@@ -78,36 +71,6 @@ class IndexBuilder:
         self._create_index(question_index, index_name="{}_question".format(self._mentor_id))
 
 
-    def _save_roadmaps(self, roadmaps: Sequence["Roadmap"]) -> None:
-        doc_ids, summary_index, question_index = [], [], []
-        for roadmap in roadmaps:
-            if  roadmap.steps and roadmap.summary\
-                and roadmap.doc_id and roadmap.steps and roadmap.summary:
-                doc_index = DocIndex(doc_id=roadmap.doc_id)
-                doc_ids.append(roadmap.doc_id)
-                summary_index.append((roadmap.summary, doc_index))
-                for step in roadmap.steps:
-                    question_index.append((step, doc_index))
-            else:
-                roadmaps.remove(roadmap)
-                
-        AutoStorage[Roadmap](name="{}_roadmap".format(self._mentor_id)).insert(doc_ids, roadmaps)
-        print(f"saved roadmap num: {len(summary_index)}")
-        self._create_index(question_index, index_name="{}_roadmap_questions".format(self._mentor_id))
-        self._create_index(summary_index, index_name="{}_roadmap_summary".format(self._mentor_id))
-
-    def _get_item(self, data: Dict[str, Any]) -> Union["Document", "Roadmap"]:
-        if self._is_roadmap:
-            return self._get_roadmap(data)
-        else:
-            return self._get_document(data)
-
-    def _save_items(self, items: Sequence[Union["Document", "Roadmap"]]) -> None:
-        if self._is_roadmap:
-            self._save_roadmaps(items)
-        else:
-            self._save_documents(items)
-
     @staticmethod
     def _load_cache(cache_path: Path, processed_items: Dict[str, Union["Document", "Roadmap"]]) -> None:
         with open(cache_path, "rb") as cache_file:
@@ -129,7 +92,8 @@ class IndexBuilder:
         
         for item in processed_items.values():
             try:
-                item_list.append(item.model_dump(exclude_unset=True))
+                for m in item:
+                    item_list.append(m.model_dump(exclude_unset=True))
             except Exception as e:
                 traceback.print_exc()
                 
@@ -157,7 +121,7 @@ class IndexBuilder:
                 if file_hash not in processed_items:
                     with open(file_path, "r", encoding="utf-8") as input_file:
                         data = json.load(input_file)
-                        new_items[file_hash] = self._get_item(data)
+                        new_items[file_hash] = self._get_documents(data)
 
                 if (i + 1) % 10 == 0 and len(new_items):
                     self._save_cache(cache_path, processed_items, new_items)
@@ -167,14 +131,16 @@ class IndexBuilder:
             except Exception:
                 print("\n exception file: \n", file_path.name)
                 traceback.print_exc()
-                new_items[file_hash] = -1
+                new_items[file_hash] = []
 
         if len(new_items):
             self._save_cache(cache_path, processed_items, new_items)
 
-        completed_items = [item for item in new_items.values() if item != -1]
+        completed_items = []
+        for item in new_items.values():
+            completed_items.extend(item)
         if len(completed_items):
-            self._save_items(completed_items)
+            self._save_documents(completed_items)
 
         self._dump_cache(dump_path, processed_items)
         print("Successfully built {} items.".format(len(processed_items)))

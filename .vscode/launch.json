@@ -19,6 +19,22 @@
             "program": "src/launcher.py",
             "console": "integratedTerminal",
             "args": ["--action","eval", "--config", "config/config.yaml"]
+        },
+        {
+            "name": "Build",
+            "type": "debugpy-old",
+            "request": "launch",
+            "program": "src/launcher.py",
+            "console": "integratedTerminal",
+            "args": ["--action","build", "--config", "config/config.yaml"]
+        },
+        {
+            "name": "Prepocess",
+            "type": "debugpy-old",
+            "request": "launch",
+            "program": "src/launcher.py",
+            "console": "integratedTerminal",
+            "args": ["--action","prepocess", "--config", "config/config.yaml"]
         }
     ]
 }

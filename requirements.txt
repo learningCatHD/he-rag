@@ -6,3 +6,4 @@ redis
 pycardinal
 pyyaml
 chromadb
+ragas

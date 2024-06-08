@@ -50,9 +50,9 @@ class SeniorMentor:
         for document in documents:
             print("retrieved documents:]\n")
             pprint(document.questions)
-            pprint(document.body)
+            pprint(document.content)
             print("\n\n\n")
-        context = "\n".join(["<doc>{}</doc>".format(document.body) for document in documents if document])
+        context = "\n".join(["<doc>{}</doc>".format(document.content) for document in documents if document])
         template = self._template[lang] if step != 0 else self._start_template[lang]
         augmented_messages = [SystemMessage(content=template.apply(context=context))]
 

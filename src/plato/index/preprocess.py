@@ -1,84 +1,57 @@
 #using utf-8
-import os
 import hashlib
 import json
 import pickle
 import traceback
 from pathlib import Path
 from typing import Any, Dict, List, Sequence, Tuple, Union
-from openai import OpenAI
-from collections import OrderedDict
 
 from tqdm import tqdm
-from .parser import clean_markdown_text 
-from ..common.types import DocIndex, Document, Roadmap
+from plato.index.parser import clean_markdown_text 
+from plato.common import Document, Roadmap
 from plato.utils import Convert
-from ..common.types import Lang
-import traceback
-from plato.index.extract import Extractor
+from .extract import Extractor
 
-
-class PreProcess:
-    def __init__(self, model_name: str, base_url: str="", api_key="0", language="Chinese") -> None:
+class Generator:
+    def __init__(self, model_name: str, base_url: str="", api_key="0") -> None:
         self.extractor =  Extractor(model_name=model_name,
                                     base_url=base_url,
                                     api_key=api_key,
-                                    language=language
                                     )
     
-    def _extract_item(self, data: Dict[str, Any], filename:str, output:Path) -> "Document":
+    def _extract_item(self, data: Dict[str, Any]) -> List[Document]:
         try:
-            roadmap_dir = output / "roadmap"
-            if not roadmap_dir.exists():
-                roadmap_dir.mkdir()
-            document_dir = output / "document"
-            if not document_dir.exists():
-                document_dir.mkdir()
             
-            roadmap_quests = []
-            questions = self.extractor._generate_question(data["content"])
-            summary = self.extractor._extract_summary(data["content"])
-            
-            roadmap_quests.extend(questions)           
-            sub_file = filename.split('.json')[0]
-            content_data = {
-                'header': sub_file,
-                'body': data["content"],
-                'questions': questions,
-                'summary':summary 
-            }
-
-            document_file_path = document_dir / "{}.json".format(sub_file)
-            with open(document_file_path, 'w', encoding='utf-8') as json_file:
-                json.dump(content_data, json_file, ensure_ascii=False, indent=4)
-                
-            document = Document(header=content_data['header'],
-                                body=content_data['body'],
-                                summary=content_data['summary'],
-                                questions=content_data['questions']
-                                )
+            c_data = Convert().md_to_dict(clean_markdown_text(data["content"]))
+            documents = []
+            for key, value in c_data.items():
+                if key and value["content"]:
+                    origin_content = value["content"]
+                    content = '\n'.join(origin_content)
+                    if len(content) < 100:
+                        continue
+                                        
+                    questions = self.extractor._generate_question(content)
+                    answers = []
+                    for question in questions:
+                        answers.append(self.extractor._gen_answer(content, question))
+                    _, header = key.split('_', 1) if '_' in key else (key, '')
+                    summary = self.extractor._generate_summary(content)
+                    document = Document(
+                        content = content,
+                        summary = summary,
+                        questions = questions,
+                        answers = answers,
+                        ground_truth = answers,
+                        header = header
+                    )
+                    documents.append(document)
+                    
         except Exception as e:
-            traceback.print_stack()
-            if isinstance(e,json.JSONDecodeError):
-                print(f"Error decoding JSON from file {filename}")
-        return document  
-
-            # roadmap_summary = self._generate_roadmap_summary(topics=topics)
-            # article_summary = self._generate_article_summary(article=data)
-            
-            # roadmap_file = "roadmap&" + filename.split('.json')[0] 
-            # roadmap_data = {
-            #     'title': roadmap_file,
-            #     'roadmap_summary': roadmap_summary,
-            #     'summary': article_summary,
-            #     'topics': topics,
-            #     'steps': roadmap_quests
-            # }
-            # document_file_path = roadmap_dir / "{}.json".format(roadmap_file)
-            # with open(document_file_path, 'w', encoding='utf-8') as json_file:
-            #     json.dump(roadmap_data, json_file, ensure_ascii=False, indent=4)                        
-            
-             
+            traceback.print_exc()
+            print(f"Exception happened: {str(e)}")
+            return
+        return documents
 
     @staticmethod
     def _load_cache(cache_path: Path, processed_items: Dict[str, Union["Document", "Roadmap"]]) -> None:
@@ -94,17 +67,34 @@ class PreProcess:
         with open(cache_path, "wb") as cache_file:
             processed_items.update(new_items)
             pickle.dump(processed_items, cache_file)
-
+            
+        
     @staticmethod
-    def _dump_cache(dump_path: Path, processed_items: Dict[str, Union["Document", "Roadmap"]]) -> None:
+    def _dump_data(dump_path: Path, sample_path: Path, processed_items: Dict[str, List[Document]]) -> None:
         item_list = []
-        for item in processed_items.values():
-            item_list.append(item.model_dump(exclude_unset=True))
+        sample_list = []
+        for key, item in processed_items.items():
+            if item == -1:
+                print(key, " does not have a right value")
+            else:
+                for m in item:
+                    item_list.append(m.model_dump(exclude_unset=True))                
+                    eval_item = {}
+                    length = min(len(m.questions), len(m.answers))
+                    eval_item['question'] = m.questions[0:length]
+                    eval_item['answer'] = m.answers[0:length]
+                    eval_item['contexts'] = m.content*length
+                    eval_item['ground_truth'] = m.answers[0:length] 
+                    sample_list.append(eval_item)                
 
         with open(dump_path, "w", encoding="utf-8") as dump_file:
             json.dump(item_list, dump_file, indent=2, ensure_ascii=False)
+        
+        with open(sample_path, "w", encoding="utf-8") as dump_file:
+            json.dump(sample_list, dump_file, indent=2, ensure_ascii=False)
+        
    
-    def run(self, folder: Path, output: Path) -> None:
+    def _generate_samples(self, folder: Path) -> None:
         input_files: List[Path] = []
         for path in folder.rglob("*.*"):
             if path.is_file() and path.suffix == ".json":
@@ -113,6 +103,7 @@ class PreProcess:
         processed_items, new_items = {}, {}
         cache_path = folder.parent / "{}.pkl".format(folder.name)
         dump_path = folder.parent / "{}.json".format(folder.name)
+        sample_path = folder.parent / "{}.json".format(folder.name + "_eval_samples")
         if cache_path.is_file():
             self._load_cache(cache_path, processed_items)
             print("Loaded {} items.".format(len(processed_items)))
@@ -124,19 +115,28 @@ class PreProcess:
             try:
                 if file_hash not in processed_items:
                     with open(file_path, "r", encoding="utf-8") as input_file:
-                        new_items[file_hash] = self._extract_item(json.load(input_file), file_path.name, output)
+                        new_items[file_hash] = self._extract_item(json.load(input_file))
 
-                if (i + 1) % 10 == 0 and len(new_items):
+                if (i + 1) % 2 == 0 and len(new_items):
                     self._save_cache(cache_path, processed_items, new_items)
             except KeyboardInterrupt:
                 print("Aborted!")
                 break
             except Exception:
+                print(f'\n\n {file_path.name} excepted \n')
                 traceback.print_exc()
-                new_items[file_hash] = -1
-
+                break
+                
         if len(new_items):
             self._save_cache(cache_path, processed_items, new_items)
 
-        self._dump_cache(dump_path, processed_items)
+        self._dump_data(dump_path, sample_path, processed_items)
         print("Successfully built {} items.".format(len(processed_items)))
+
+        
+    def run(self, folder: Path, gen_sample=True):
+        if gen_sample == True:
+            self._generate_samples(folder)
+        
+        
+    

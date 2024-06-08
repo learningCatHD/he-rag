@@ -8,7 +8,7 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-from plato import PreProcess, IndexBuilder, Server, view_logs, Evaluator  # noqa: E402
+from plato import IndexBuilder, Server, view_logs, Generator, Evaluator  # noqa: E402
 
 try:
     import platform
@@ -41,8 +41,7 @@ def interactive_cli(config, action):
             base_url = build_args.get("base_url", "")
             for folder_args in build_args["folders"]:
                 folder = Path(folder_args["file"])
-                output = Path(folder_args["output"])
-                PreProcess(model, base_url).run(folder, output)
+                Generator(model, base_url).run(folder)
     elif action == Action.BUILD:
         for build_args in config_dict["build"]:
             mentor_id = build_args["mentor"]
@@ -62,8 +61,9 @@ def interactive_cli(config, action):
             model = build_args["model"]
             base_url = build_args.get("base_url", "")
             for folder_args in build_args["folders"]:
-                folder = Path(folder_args["file"])
-                Evaluator(model, base_url).run(folder)
+                doc_file = Path(folder_args["doc_file"])
+                eval_file = Path(folder_args["eval_file"])
+                Evaluator(model, "LLM", base_url).run(doc_file, eval_file)
 
 if __name__ == "__main__":
     interactive_cli()

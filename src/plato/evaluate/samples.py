@@ -12,7 +12,7 @@ from plato.common import Document, Roadmap
 from plato.utils import Convert
 from .extract import Extractor
 
-class Evaluator:
+class Generator:
     def __init__(self, model_name: str, base_url: str="", api_key="0") -> None:
         self.extractor =  Extractor(model_name=model_name,
                                     base_url=base_url,
@@ -132,9 +132,7 @@ class Evaluator:
 
         self._dump_data(dump_path, sample_path, processed_items)
         print("Successfully built {} items.".format(len(processed_items)))
-        
-    def eval_ragas(self):
-        pass
+
         
     def run(self, folder: Path, gen_sample=True):
         if gen_sample == True:
