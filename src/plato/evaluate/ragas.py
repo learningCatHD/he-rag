@@ -6,6 +6,7 @@ import traceback
 from pathlib import Path
 from typing import Any, Dict, List, Sequence, Tuple, Union
 from pprint import pprint
+import re
 
 from tqdm import tqdm
 from plato.index.parser import clean_markdown_text 
@@ -31,7 +32,7 @@ from ..templates.evaluate import (
 
 from datasets import Dataset 
 from ragas import evaluate
-from ragas.metrics import faithfulness, answer_correctness
+from ragas.metrics import faithfulness, answer_correctness, context_precision, context_entity_recall, context_recall
 
 class Evaluator:
     def __init__(self, model_name: str, mentor_id: str, base_url: str="", api_key="0") -> None:
@@ -98,10 +99,10 @@ class Evaluator:
                 item["answers"] = []
                 contexts = []
                 for question in item["questions"]:
-                    indexes = self._retriever.retrieve(question, top_k=1)
+                    indexes = self._retriever.retrieve(question, top_k=2)
                     documents = [self._storage.query(index.doc_id) for index in indexes]
                     context = "\n".join(["<doc>{}</doc>".format(document.content) for document in documents if document])
-                    contexts.append(context)
+                    contexts.append(documents)
                     item["answers"].append(self.extractor._gen_answer(context, question))
                 
                 length = min(len(item['questions']), len(item['answers']))
@@ -128,9 +129,9 @@ class Evaluator:
         processed_items, new_items = {}, {}
         cache_path = folder.parent / "{}.pkl".format(folder.name)
         sample_path = folder.parent / "eval/{}.json".format(folder.name + "_ragas_samples")
-        # if cache_path.is_file():
-        #     self._load_cache(cache_path, processed_items)
-        #     print("Loaded {} items.".format(len(processed_items)))
+        if cache_path.is_file():
+            self._load_cache(cache_path, processed_items)
+            print("Loaded {} items.".format(len(processed_items)))
 
         for i, file_path in enumerate(tqdm(input_files, desc="Build index")):
             with open(file_path, "rb") as binary_file:
@@ -160,7 +161,7 @@ class Evaluator:
     def _eval(self, folder:Path):
         input_files: List[Path] = []
         for path in folder.rglob("*.*"):
-            if path.is_file() and path.suffix == ".json":
+            if path.is_file() and re.findall("_ragas_samples", path.name):
                 input_files.append(path)
         for file in input_files:
             data = {"question":[],
@@ -177,12 +178,12 @@ class Evaluator:
                     data["ground_truth"].extend(item["ground_truth"])
             data["contexts"] = [[item] for item in data['contexts']]
             dataset = Dataset.from_dict(data)
-            score = evaluate(dataset,metrics=[faithfulness,answer_correctness])
-            result_path = file.parent / "{}.json".format(file.name + "ragas_result")
+            score = evaluate(dataset,metrics=[faithfulness,context_precision, context_entity_recall, context_recall, answer_correctness])
+            result_path = file.parent / "{}.csv".format("ragas_result")
             score.to_pandas()
             score.to_pandas().to_csv(result_path, index=False)
             
     def run(self, doc_file: Path, eval_file: Path):
-        # self._generate_ragas_samples(doc_file)
+        self._generate_ragas_samples(doc_file)
         self._eval(eval_file)
             
