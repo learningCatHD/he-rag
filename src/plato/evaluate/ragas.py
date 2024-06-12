@@ -12,7 +12,7 @@ from tqdm import tqdm
 from plato.index.parser import clean_markdown_text 
 from plato.common import Document, Roadmap
 from plato.utils import Convert
-from .extract import Extractor
+from plato.index.extract import Extractor
 
 from cardinal import (
     AssistantMessage,

@@ -11,6 +11,7 @@ from plato.index.parser import clean_markdown_text
 from plato.common import Document, Roadmap
 from plato.utils import Convert
 from .extract import Extractor
+from collections import deque
 
 class Generator:
     def __init__(self, model_name: str, base_url: str="", api_key="0") -> None:
@@ -19,11 +20,24 @@ class Generator:
                                     api_key=api_key,
                                     )
     
-    def _extract_item(self, data: Dict[str, Any]) -> List[Document]:
+    def _extract_item(self, data: str) -> List[Document]:
         try:
-            
-            c_data = Convert().md_to_dict(clean_markdown_text(data["content"]))
+            c_data = Convert().md_to_dict(clean_markdown_text(data))
             documents = []
+            node_stack = deque()
+            node_stack.append(Document(
+                content = [],
+                header = "",
+                summary = "",
+                entities = [],
+                questions = [],
+                answers = [],
+                ground_truth = [],
+                parent = "",
+                children = []                                                               
+            ))
+            cur_level = -1
+            
             for key, value in c_data.items():
                 if key and value["content"]:
                     origin_content = value["content"]
@@ -35,22 +49,64 @@ class Generator:
                     answers = []
                     for question in questions:
                         answers.append(self.extractor._gen_answer(content, question))
-                    _, header = key.split('_', 1) if '_' in key else (key, '')
+                                            
                     summary = self.extractor._generate_summary(content)
-                    document = Document(
-                        content = content,
-                        summary = summary,
-                        questions = questions,
-                        answers = answers,
-                        ground_truth = answers,
-                        header = header
-                    )
-                    documents.append(document)
+                    level, header = key.split('_', 1) if '_' in key else (key, '')
+                    level = int(level)
                     
+                    if level > cur_level:
+                        parent = node_stack[-1]
+                        document = Document(
+                            content = [content],
+                            header = header,
+                            summary = summary,
+                            entities = [],
+                            questions = questions,
+                            answers = answers,
+                            ground_truth = answers,
+                            parent = parent.doc_id,
+                            children = []
+                        )
+                        parent.children.append(document.doc_id)
+                        node_stack.append(document)  
+                        cur_level = level
+                    elif level == cur_level:
+                        parent = node_stack[-2]
+                        document = Document(
+                            content = [content],
+                            header = header,
+                            summary = summary,
+                            entities = [],
+                            questions = questions,
+                            answers = answers,
+                            ground_truth = answers,
+                            parent = parent.doc_id,
+                            children = []
+                        )
+                        parent.children.append(document.doc_id)
+                    elif level < cur_level:                                                
+                        for _ in range(level+1 - cur_level):
+                            node_stack.pop()
+                        parent = node_stack[-1]
+                        document = Document(
+                            content = [content],
+                            header = header,
+                            summary = summary,
+                            entities = [],
+                            questions = questions,
+                            answers = answers,
+                            ground_truth = answers,
+                            parent = parent.doc_id,
+                            children = []
+                        )
+                        parent.children.append(document.doc_id)
+                        node_stack.append(document)  
+                        cur_level = level                        
+                    documents.append(document)
         except Exception as e:
             traceback.print_exc()
             print(f"Exception happened: {str(e)}")
-            return
+            
         return documents
 
     @staticmethod
@@ -67,17 +123,19 @@ class Generator:
         with open(cache_path, "wb") as cache_file:
             processed_items.update(new_items)
             pickle.dump(processed_items, cache_file)
-            
+              
         
     @staticmethod
     def _dump_data(dump_path: Path, sample_path: Path, processed_items: Dict[str, List[Document]]) -> None:
         item_list = []
         sample_list = []
         for key, item in processed_items.items():
-            if item == -1:
+            if not item or item == -1:
                 print(key, " does not have a right value")
             else:
                 for m in item:
+                    if not m:
+                        continue
                     item_list.append(m.model_dump(exclude_unset=True))                
                     eval_item = {}
                     length = min(len(m.questions), len(m.answers))
@@ -93,11 +151,20 @@ class Generator:
         with open(sample_path, "w", encoding="utf-8") as dump_file:
             json.dump(sample_list, dump_file, indent=2, ensure_ascii=False)
         
+    def _get_file_content(self, file_path: Path) -> str:
+        if file_path.suffix == ".md":
+            with open(file_path, 'r', encoding='utf-8') as md_file:
+                data = md_file.read()
+            return data
+        if file_path.suffix == ".json":
+            with open(file_path, "r", encoding="utf-8") as input_file:
+                data = json.load(input_file)
+            return data["content"] if "content" in data else ""
    
     def _generate_samples(self, folder: Path) -> None:
         input_files: List[Path] = []
         for path in folder.rglob("*.*"):
-            if path.is_file() and path.suffix == ".json":
+            if path.is_file() and path.suffix in [".md", ".json"]:
                 input_files.append(path)
 
         processed_items, new_items = {}, {}
@@ -114,8 +181,7 @@ class Generator:
 
             try:
                 if file_hash not in processed_items:
-                    with open(file_path, "r", encoding="utf-8") as input_file:
-                        new_items[file_hash] = self._extract_item(json.load(input_file))
+                    new_items[file_hash] = self._extract_item(self._get_file_content(file_path))
 
                 if (i + 1) % 2 == 0 and len(new_items):
                     self._save_cache(cache_path, processed_items, new_items)

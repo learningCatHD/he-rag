@@ -1,23 +1,20 @@
 import os
 import json
-from pathlib import Path
 from typing import Any, Dict, List, Sequence, Tuple, Union
 from openai import OpenAI
-from collections import OrderedDict
+from tenacity import retry, stop_after_attempt, wait_random_exponential
+from plato.common import Lang, LanguageDict
 
-from cardinal import AutoStorage, AutoVectorStore, ChatOpenAI, FunctionAvailable, HumanMessage
-from tqdm import tqdm
-from .parser import clean_markdown_text
-from ..templates.preprocess import EXTRACT_USUAL_SUMMARY_TEMPLATE, GENERATE_QUESTIONS_TEMPLATE, QUESTION_FUNCTION, \
-    SUMMARY_TEMPLATE, GENERATE_OVERALL_QUESTIONS_TEMPLATE, \
-    TRANSLATE_TEMPLATE    
+from cardinal import ChatOpenAI, FunctionAvailable, HumanMessage
+from ..templates.evaluate import SUMMARY_TEMPLATE, GENERATE_QUESTIONS_TEMPLATE, QUESTION_FUNCTION, GENERATE_ANSWER
+from ..templates.evaluate import SUMMARY_TEMPLATE_ZH, GENERATE_QUESTIONS_TEMPLATE_ZH, QUESTION_FUNCTION_ZH, GENERATE_ANSWER_ZH, TRANSLATE_TEMPLATE
 from plato.utils import Convert
-from plato.common.types import Lang
+
 
 
 class Extractor:
-    def __init__(self, model_name: str, base_url: str="", api_key="0", language="Chinese") -> None:
-        api_key = os.environ.get('OPENAI_API_KEY', os.defpath)
+    def __init__(self, model_name: str, base_url: str="", api_key="0") -> None:
+        api_key = os.environ.get('OPENAI_API_KEY', "")
         if base_url:
             self.client = OpenAI(
                 api_key=api_key,
@@ -27,14 +24,36 @@ class Extractor:
             self.client = OpenAI(
                 api_key=api_key,
             )
-        self._chat_model = ChatOpenAI(model=model_name)
+            
+        self.summary_template = {
+            Lang.EN: SUMMARY_TEMPLATE,
+            Lang.ZH: SUMMARY_TEMPLATE_ZH
+        }
+
+        self.generate_questions_template = {
+            Lang.EN: GENERATE_QUESTIONS_TEMPLATE,
+            Lang.ZH: GENERATE_QUESTIONS_TEMPLATE_ZH
+        }
+        
+        self.question_function_template = {
+            Lang.EN: QUESTION_FUNCTION,
+            Lang.ZH: QUESTION_FUNCTION_ZH
+        }
+        
+        self.generate_answer_template = {
+            Lang.EN: GENERATE_ANSWER,
+            Lang.ZH: GENERATE_ANSWER_ZH
+        }
+        
         self.model = model_name
-        self.base_url=base_url
-        self.language = language 
-    
-    def _translate(self, text):
+        self.base_url = base_url
+
+    def _get_content_language(self, content):
+        return Convert().judge_language(content)
+        
+    def _translate(self, text, language):
         if isinstance(text, str):
-            query = TRANSLATE_TEMPLATE.apply(language=self.language, text=text)
+            query = TRANSLATE_TEMPLATE.apply(language=LanguageDict[language], text=text)
             result = self.client.chat.completions.create(
                 messages=[{"role": "user", "content": query}],
                 model=self.model,
@@ -44,19 +63,19 @@ class Extractor:
         elif isinstance(text, List):
             response = []
             for item in text:
-                response.append(self._translate(item))
+                response.append(self._translate(item, language))
             return response
-            
-    def _generate_article_summary(self, article):
-        query = EXTRACT_USUAL_SUMMARY_TEMPLATE.apply(article=article)
+        
+    @retry(wait=wait_random_exponential(min=1, max=10), stop=stop_after_attempt(5))            
+    def _generate_summary(self, content):
+        summary_template = self.summary_template[self._get_content_language(content)]
+        query = summary_template.apply(content=content)
         result = self.client.chat.completions.create(
             messages=[{"role": "user", "content": query}],
             model=self.model,
             temperature=0.5
         )
         response = result.choices[0].message.content
-        if Convert().judge_language(response) != self.language:
-            response = self._translate(response)
         return response
 
     def _str_list(self, content):
@@ -66,60 +85,33 @@ class Extractor:
 
         return questions_list
 
-    def _generate_question(self, article):
-        if self.model.startswith("gpt"):            
-            client = ChatOpenAI(model="gpt-4o")
-            tool_call = client.function_call(
-                messages=[HumanMessage(content=GENERATE_QUESTIONS_TEMPLATE.apply(article=article))],
-                tools=[FunctionAvailable(function=QUESTION_FUNCTION.apply())],
-            )
-            response = tool_call.arguments.get("questions", [])
-        else:
-            functions = [QUESTION_FUNCTION.apply()]
-            response = self.client.chat.completions.create(
-                messages=[{"role": "user", "content": GENERATE_QUESTIONS_TEMPLATE.apply(article=article)}],
-                model=self.model,
-                functions=functions
-            )
-            response = self._str_list(response.choices[0].message.content)
+    def _generate_question(self, context):
+        generate_question = self.generate_questions_template[Lang.EN]
+        client = ChatOpenAI(model="gpt-4o")
+        tool_call = client.function_call(
+            messages=[HumanMessage(content=generate_question.apply(context=context))],
+            tools=[FunctionAvailable(function=QUESTION_FUNCTION.apply())],
+        )
+        response = tool_call.arguments.get("questions", [])
+        if self._get_content_language(response) != Lang.EN:
+            response = self._translate(response, Lang.EN)
             
-        if Convert().judge_language(response) != self.language:
-            response = self._translate(response)
             return response
         
-    def _generate_overall_question(self, article):
-        if self.model.startswith("gpt"): 
-            client = ChatOpenAI(model="gpt-4o")
-            tool_call = client.function_call(
-                messages=[HumanMessage(content=GENERATE_OVERALL_QUESTIONS_TEMPLATE.apply(article=article))],
-                tools=[FunctionAvailable(function=QUESTION_FUNCTION.apply())],
-            )
-            response = tool_call.arguments.get("questions", [])
-            if Convert().judge_language(response) != self.language:
-                response = self._translate(response)
-            return response
-        else:
-            functions = [QUESTION_FUNCTION.apply()]
-            response = self.client.chat.completions.create(
-                messages=[{"role": "user", "content": GENERATE_OVERALL_QUESTIONS_TEMPLATE.apply(article=article)}],
-                model=self.model,
-                functions=functions
-            )
-            response = self._str_list(response.choices[0].message.content)
-            
-        if Convert().judge_language(response) != self.language:
-            response = self._translate(response)
-            return response
-
-    def _extract_summary(self, text: str) -> str:
-        query = SUMMARY_TEMPLATE.apply(text=text)
+        return response
+    
+    def _update_knowledge_tree(self, metadata):
+        pass
+        # 1 traverse the root, leaf, down-stream
+    
+    @retry(wait=wait_random_exponential(min=1, max=60), stop=stop_after_attempt(5))
+    def _gen_answer(self, text: str, question: str) -> str:
+        generate_answer = self.generate_answer_template[self._get_content_language(text)]
+        query = generate_answer.apply(context=text, question=question)
         result = self.client.chat.completions.create(
             messages=[{"role": "user", "content": query}],
             model=self.model,
             temperature=0.5
         )
         response = result.choices[0].message.content
-        if Convert().judge_language(response) != self.language:
-            response = self._translate(response)
         return response
-    

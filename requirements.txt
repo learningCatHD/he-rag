@@ -4,6 +4,8 @@ pymilvus>=2.3.0
 python-dotenv
 redis
 pycardinal
+pymysql
+nltk
 pyyaml
 chromadb
 ragas
