@@ -9,7 +9,7 @@ from cardinal import ChatOpenAI, FunctionAvailable, HumanMessage
 from ..templates.evaluate import SUMMARY_TEMPLATE, GENERATE_QUESTIONS_TEMPLATE, QUESTION_FUNCTION, GENERATE_ANSWER
 from ..templates.evaluate import SUMMARY_TEMPLATE_ZH, GENERATE_QUESTIONS_TEMPLATE_ZH, QUESTION_FUNCTION_ZH, GENERATE_ANSWER_ZH, TRANSLATE_TEMPLATE
 from plato.utils import Convert
-
+from openie import StanfordOpenIE
 
 
 class Extractor:
@@ -78,6 +78,14 @@ class Extractor:
         response = result.choices[0].message.content
         return response
 
+    def _generate_header(self, summary):
+        with StanfordOpenIE() as client:
+            triples = client.annotate(summary)
+            header = ''.join(triples[0])
+        return header
+    
+    
+    
     def _str_list(self, content):
         corrected_string = content.replace('["', '{"').replace('": ', '": "').replace('？, "', '？", "').replace(']', '"}')
         parsed_dict = json.loads(corrected_string)

@@ -166,3 +166,4 @@ preprocess_log
 preprocess_hgface
 *_log
 config/*
+*.tmp

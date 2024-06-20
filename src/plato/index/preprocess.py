@@ -44,65 +44,134 @@ class Generator:
                     content = '\n'.join(origin_content)
                     if len(content) < 100:
                         continue
-                                        
-                    questions = self.extractor._generate_question(content)
-                    answers = []
-                    for question in questions:
-                        answers.append(self.extractor._gen_answer(content, question))
-                                            
-                    summary = self.extractor._generate_summary(content)
-                    level, header = key.split('_', 1) if '_' in key else (key, '')
-                    level = int(level)
-                    
-                    if level > cur_level:
-                        parent = node_stack[-1]
-                        document = Document(
-                            content = [content],
-                            header = header,
-                            summary = summary,
-                            entities = [],
-                            questions = questions,
-                            answers = answers,
-                            ground_truth = answers,
-                            parent = parent.doc_id,
-                            children = []
-                        )
-                        parent.children.append(document.doc_id)
-                        node_stack.append(document)  
-                        cur_level = level
-                    elif level == cur_level:
-                        parent = node_stack[-2]
-                        document = Document(
-                            content = [content],
-                            header = header,
-                            summary = summary,
-                            entities = [],
-                            questions = questions,
-                            answers = answers,
-                            ground_truth = answers,
-                            parent = parent.doc_id,
-                            children = []
-                        )
-                        parent.children.append(document.doc_id)
-                    elif level < cur_level:                                                
-                        for _ in range(level+1 - cur_level):
-                            node_stack.pop()
-                        parent = node_stack[-1]
-                        document = Document(
-                            content = [content],
-                            header = header,
-                            summary = summary,
-                            entities = [],
-                            questions = questions,
-                            answers = answers,
-                            ground_truth = answers,
-                            parent = parent.doc_id,
-                            children = []
-                        )
-                        parent.children.append(document.doc_id)
-                        node_stack.append(document)  
-                        cur_level = level                        
-                    documents.append(document)
+                    if len(content) < 4000:
+                        questions = self.extractor._generate_question(content)
+                        answers = []
+                        for question in questions:
+                            answers.append(self.extractor._gen_answer(content, question))
+                                                
+                        summary = self.extractor._generate_summary(content)
+                        try:
+                            level, header = key.split('_', 1) if '_' in key else (key, '')
+                        except:
+                            level = 0
+                            header = self.extractor._generate_header(summary)
+                        level = int(level)
+                        
+                        if level > cur_level:
+                            parent = node_stack[-1]
+                            document = Document(
+                                content = [content],
+                                header = header,
+                                summary = summary,
+                                entities = [],
+                                questions = questions,
+                                answers = answers,
+                                ground_truth = answers,
+                                parent = parent.doc_id,
+                                children = []
+                            )
+                            parent.children.append(document.doc_id)
+                            node_stack.append(document)  
+                            cur_level = level
+                        elif level == cur_level:
+                            parent = node_stack[-2]
+                            document = Document(
+                                content = [content],
+                                header = header,
+                                summary = summary,
+                                entities = [],
+                                questions = questions,
+                                answers = answers,
+                                ground_truth = answers,
+                                parent = parent.doc_id,
+                                children = []
+                            )
+                            parent.children.append(document.doc_id)
+                        elif level < cur_level:                                                
+                            for _ in range(level+1 - cur_level):
+                                node_stack.pop()
+                            parent = node_stack[-1]
+                            document = Document(
+                                content = [content],
+                                header = header,
+                                summary = summary,
+                                entities = [],
+                                questions = questions,
+                                answers = answers,
+                                ground_truth = answers,
+                                parent = parent.doc_id,
+                                children = []
+                            )
+                            parent.children.append(document.doc_id)
+                            node_stack.append(document)  
+                            cur_level = level                        
+                        documents.append(document)
+                    else:
+                        contents = Convert().split_document(content, 3000)
+                        _level, header = key.split('_', 1) if '_' in key else (key, '')
+                        for _, content in enumerate(contents):
+                            if len(content) < 100:
+                                continue
+                            questions = self.extractor._generate_question(content)
+                            answers = []
+                            for question in questions:
+                                answers.append(self.extractor._gen_answer(content, question))
+                                                    
+                            summary = self.extractor._generate_summary(content)
+                            header = self.extractor._generate_header(summary)
+                            level = int(_level) + 1 
+                            
+                            if level > cur_level:
+                                parent = node_stack[-1]
+                                document = Document(
+                                    content = [content],
+                                    header = header,
+                                    summary = summary,
+                                    entities = [],
+                                    questions = questions,
+                                    answers = answers,
+                                    ground_truth = answers,
+                                    parent = parent.doc_id,
+                                    children = []
+                                )
+                                parent.children.append(document.doc_id)
+                                node_stack.append(document)  
+                                cur_level = level
+                            elif level == cur_level:
+                                parent = node_stack[-2]
+                                document = Document(
+                                    content = [content],
+                                    header = header,
+                                    summary = summary,
+                                    entities = [],
+                                    questions = questions,
+                                    answers = answers,
+                                    ground_truth = answers,
+                                    parent = parent.doc_id,
+                                    children = []
+                                )
+                                parent.children.append(document.doc_id)
+                            elif level < cur_level:                                                
+                                for _ in range(level+1 - cur_level):
+                                    node_stack.pop()
+                                parent = node_stack[-1]
+                                document = Document(
+                                    content = [content],
+                                    header = header,
+                                    summary = summary,
+                                    entities = [],
+                                    questions = questions,
+                                    answers = answers,
+                                    ground_truth = answers,
+                                    parent = parent.doc_id,
+                                    children = []
+                                )
+                                parent.children.append(document.doc_id)
+                                node_stack.append(document)  
+                                cur_level = level                        
+                            documents.append(document)
+                        
         except Exception as e:
             traceback.print_exc()
             print(f"Exception happened: {str(e)}")

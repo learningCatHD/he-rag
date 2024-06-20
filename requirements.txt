@@ -9,3 +9,4 @@ nltk
 pyyaml
 chromadb
 ragas
+stanford_openie
