@@ -14,9 +14,8 @@ from plato.common.types import DocIndex, Document, Roadmap
 
 
 class IndexBuilder:
-    def __init__(self, mentor_id: str, is_roadmap: bool) -> None:
+    def __init__(self, mentor_id: str) -> None:
         self._mentor_id = mentor_id
-        self._is_roadmap = is_roadmap
         self._chat_model = ChatOpenAI(model="gpt-3.5-turbo")
         self._question_function = QUESTION_FUNCTION
         self._question_template = QUESTION_TEMPLATE
@@ -38,12 +37,15 @@ class IndexBuilder:
         documents  = []
         for item in data:
             documents.append(Document(
-            content ='\n'.join(item['content']) if isinstance(item['content'], list) else item['content'],
+            content = item.get("content", []),
             header=item.get("header", ""),
             summary=item.get("summary", ""),
             questions=item.get("questions", []),
             answers=item.get("answers", []),
-            ground_truth=item.get("ground_truth", [])
+            ground_truth=item.get("ground_truth", []),
+            parent=item.get("parent", ""),
+            children=item.get("children", ""),
+            entities=item.get("entities", [])
          ))
         return documents
             

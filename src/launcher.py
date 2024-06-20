@@ -47,8 +47,7 @@ def interactive_cli(config, action):
             mentor_id = build_args["mentor"]
             for folder_args in build_args["folders"]:
                 folder = Path(folder_args["path"])
-                is_roadmap = folder_args["roadmap"]
-                IndexBuilder(mentor_id, is_roadmap).build_index(folder)
+                IndexBuilder(mentor_id).build_index(folder)
     elif action == Action.LAUNCH:
         mentor_ids = config_dict["launch"]["mentors"]
         Server(mentor_ids).launch()

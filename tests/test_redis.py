@@ -2,7 +2,7 @@ import redis
 import pickle
 # 设置Redis服务器地址和端口号
 # host = '3.39.236.188'
-host = 'localhost'
+host = '52.78.46.237'
 port = 6379
 
 try:
