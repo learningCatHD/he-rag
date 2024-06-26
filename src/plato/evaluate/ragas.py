@@ -78,7 +78,7 @@ class Evaluator:
                     item_list.append(m.model_dump(exclude_unset=True))                
                     eval_item = {}
                     length = min(len(m.question), len(m.answer))
-                    eval_item['question'] = m.question[0:length]
+                    eval_item['question'] = m.question[0:length] 
                     eval_item['answer'] = m.answer[0:length]
                     eval_item['contexts'] = m.contexts[0:length]
                     eval_item['ground_truth'] = m.ground_truth[0:length] 
@@ -92,23 +92,27 @@ class Evaluator:
         with open(cache_path, "rb") as cache_file:
             processed_items.update(pickle.load(cache_file))
             
-    def _retrieve_generate_answer(self, data: List[Dict[str, Dict]]) -> List[EvaSample]:
+    def _retrieve_generate_answer(self, data: List[Dict[str, Dict]], topk=1, hierarch=False) -> List[EvaSample]:
         try:
             eval_samples = []
             for item in data:
-                item["answers"] = []
+                item["answer"] = []
                 contexts = []
-                for question in item["questions"]:
-                    indexes = self._retriever.retrieve(question, top_k=2)
+                for question in item["question"]:
+                    indexes = self._retriever.retrieve(question, top_k=topk)
                     documents = [self._storage.query(index.doc_id) for index in indexes]
+                    if hierarch:
+                        for document in documents:
+                            children_docs = [self._storage.query(doc_id) for doc_id in document.children] 
+                            documents.extend(children_docs)
                     context = "\n".join(["<doc>{}</doc>".format(document.content) for document in documents if document])
-                    contexts.append(documents)
-                    item["answers"].append(self.extractor._gen_answer(context, question))
+                    contexts.append(["<doc>{}</doc>".format(document.content) for document in documents if document])
+                    item["answer"].append(self.extractor._gen_answer(context, question))
                 
-                length = min(len(item['questions']), len(item['answers']))
+                length = min(len(item['question']), len(item['answer']))
                 sample = EvaSample(
-                    question = item["questions"][:length],
-                    answer = item["answers"][:length],
+                    question = item["question"][:length],
+                    answer = item["answer"][:length],
                     contexts = contexts[:length],
                     ground_truth = item["ground_truth"]
                 )
@@ -119,8 +123,8 @@ class Evaluator:
             print(f"Exception happened: {str(e)}")
             return
         return eval_samples
-    
-    def _generate_ragas_samples(self, folder:Path) -> None:
+
+def _generate_ragas_samples(self, folder:Path) -> None:
         input_files: List[Path] = []
         for path in folder.rglob("*.*"):
             if path.is_file() and path.suffix == ".json":
@@ -140,7 +144,7 @@ class Evaluator:
             try:
                 if file_hash not in processed_items:
                     with open(file_path, "r", encoding="utf-8") as input_file:
-                        new_items[file_hash] = self._retrieve_generate_answer(json.load(input_file))
+                        new_items[file_hash] = self._retrieve_generate_answer(json.load(input_file), topk=2, hierarch=False)
 
                 if (i + 1) % 2 == 0 and len(new_items):
                     self._save_cache(cache_path, processed_items, new_items)
@@ -176,7 +180,7 @@ class Evaluator:
                     data["answer"].extend(item["answer"])
                     data["contexts"].extend(item["contexts"])
                     data["ground_truth"].extend(item["ground_truth"])
-            data["contexts"] = [[item] for item in data['contexts']]
+            data["contexts"] = data['contexts']
             dataset = Dataset.from_dict(data)
             score = evaluate(dataset,metrics=[faithfulness,context_precision, context_entity_recall, context_recall, answer_correctness])
             result_path = file.parent / "{}.csv".format("ragas_result")
@@ -184,6 +188,6 @@ class Evaluator:
             score.to_pandas().to_csv(result_path, index=False)
             
     def run(self, doc_file: Path, eval_file: Path):
-        self._generate_ragas_samples(doc_file)
+        # self._generate_ragas_samples(doc_file)
         self._eval(eval_file)
             

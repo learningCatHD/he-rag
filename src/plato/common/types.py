@@ -39,7 +39,7 @@ class EvaSample(BaseModel):
     doc_id: str = Field(default_factory=lambda: uuid.uuid4().hex)
     question: List[str]
     answer: List[str]
-    contexts: List[str]
+    contexts: List[List[str]]
     ground_truth: List[str]
     
 

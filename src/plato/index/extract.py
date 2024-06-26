@@ -108,9 +108,6 @@ class Extractor:
         
         return response
     
-    def _update_knowledge_tree(self, metadata):
-        pass
-        # 1 traverse the root, leaf, down-stream
     
     @retry(wait=wait_random_exponential(min=1, max=60), stop=stop_after_attempt(5))
     def _gen_answer(self, text: str, question: str) -> str:

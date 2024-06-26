@@ -4,6 +4,7 @@ from plato.common import Document, Node
 from pathlib import Path
 import json
 
+'''
 # 示例节点信息，按照层序排列
 nodes_info = [
     {"node_id": "root", "is_root": True, "name": "root", "parent": None, "document": "root_doc", "level": 1},
@@ -11,6 +12,8 @@ nodes_info = [
     {"node_id": "child1", "is_root": False, "name": "child1", "parent": "root", "document": "child1_doc", "level": 2},
     {"node_id": "child2", "is_root": False, "name": "child2", "parent": "root", "document": "child2_doc", "level": 2}
 ]
+'''
+
 
 class KGTree:
     def __init__(self, node_file_path) -> None:

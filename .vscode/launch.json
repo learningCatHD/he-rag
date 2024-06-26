@@ -35,6 +35,14 @@
             "program": "src/launcher.py",
             "console": "integratedTerminal",
             "args": ["--action","preprocess", "--config", "config/config.yaml"]
+        },
+        {
+            "name": "DataTransfer",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "tools/data.py",
+            "console": "integratedTerminal",
+            "args": ["--folder","data/peft_data/build", "--type", "all"]
         }
     ]
 }
