@@ -42,7 +42,7 @@
             "request": "launch",
             "program": "tools/data.py",
             "console": "integratedTerminal",
-            "args": ["--folder","data/peft_data/build", "--type", "all"]
+            "args": ["--folder","data/peft_data/build", "--type", "hipporag"]
         }
     ]
 }
