@@ -20,7 +20,7 @@ class Generator:
                                     api_key=api_key,
                                     )
     
-    def _extract_item(self, data: str) -> List[Document]:
+    def _extract_item(self, data: str, content_key) -> List[Document]:
         try:
             c_data = Convert().md_to_dict(clean_markdown_text(data))
             documents = []
@@ -39,8 +39,8 @@ class Generator:
             cur_level = -1
             
             for key, value in c_data.items():
-                if key and value["content"]:
-                    origin_content = value["content"]
+                if key and value[content_key]:
+                    origin_content = value[content_key]
                     content = '\n'.join(origin_content)
                     if len(content) < 100:
                         continue
@@ -230,7 +230,7 @@ class Generator:
                 data = json.load(input_file)
             return data["content"] if "content" in data else ""
    
-    def _generate_samples(self, folder: Path) -> None:
+    def _generate_samples(self, folder: Path, content_key: str) -> None:
         input_files: List[Path] = []
         for path in folder.rglob("*.*"):
             if path.is_file() and path.suffix in [".md", ".json"]:
@@ -250,7 +250,7 @@ class Generator:
 
             try:
                 if file_hash not in processed_items:
-                    new_items[file_hash] = self._extract_item(self._get_file_content(file_path))
+                    new_items[file_hash] = self._extract_item(self._get_file_content(file_path), content_key)
 
                 if (i + 1) % 2 == 0 and len(new_items):
                     self._save_cache(cache_path, processed_items, new_items)
@@ -269,9 +269,9 @@ class Generator:
         print("Successfully built {} items.".format(len(processed_items)))
 
         
-    def run(self, folder: Path, gen_sample=True):
+    def run(self, folder: Path, content_key: str, gen_sample=True):
         if gen_sample == True:
-            self._generate_samples(folder)
+            self._generate_samples(folder, content_key)
         
         
     

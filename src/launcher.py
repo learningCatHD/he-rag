@@ -41,7 +41,8 @@ def interactive_cli(config, action):
             base_url = build_args.get("base_url", "")
             for folder_args in build_args["folders"]:
                 folder = Path(folder_args["file"])
-                Generator(model, base_url).run(folder)
+                content_key = folder_args["content_key"]
+                Generator(model, base_url).run(folder, content_key)
     elif action == Action.BUILD:
         for build_args in config_dict["build"]:
             mentor_id = build_args["mentor"]

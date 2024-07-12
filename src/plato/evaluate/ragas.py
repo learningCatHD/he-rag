@@ -124,43 +124,43 @@ class Evaluator:
             return
         return eval_samples
 
-def _generate_ragas_samples(self, folder:Path) -> None:
-        input_files: List[Path] = []
-        for path in folder.rglob("*.*"):
-            if path.is_file() and path.suffix == ".json":
-                input_files.append(path)
+    def _generate_ragas_samples(self, folder:Path) -> None:
+            input_files: List[Path] = []
+            for path in folder.rglob("*.*"):
+                if path.is_file() and path.suffix == ".json":
+                    input_files.append(path)
 
-        processed_items, new_items = {}, {}
-        cache_path = folder.parent / "{}.pkl".format(folder.name)
-        sample_path = folder.parent / "eval/{}.json".format(folder.name + "_ragas_samples")
-        if cache_path.is_file():
-            self._load_cache(cache_path, processed_items)
-            print("Loaded {} items.".format(len(processed_items)))
+            processed_items, new_items = {}, {}
+            cache_path = folder.parent / "{}.pkl".format(folder.name)
+            sample_path = folder.parent / "eval/{}.json".format(folder.name + "_ragas_samples")
+            if cache_path.is_file():
+                self._load_cache(cache_path, processed_items)
+                print("Loaded {} items.".format(len(processed_items)))
 
-        for i, file_path in enumerate(tqdm(input_files, desc="Build index")):
-            with open(file_path, "rb") as binary_file:
-                file_hash = hashlib.sha1(binary_file.read()).hexdigest()
+            for i, file_path in enumerate(tqdm(input_files, desc="Build index")):
+                with open(file_path, "rb") as binary_file:
+                    file_hash = hashlib.sha1(binary_file.read()).hexdigest()
 
-            try:
-                if file_hash not in processed_items:
-                    with open(file_path, "r", encoding="utf-8") as input_file:
-                        new_items[file_hash] = self._retrieve_generate_answer(json.load(input_file), topk=2, hierarch=False)
+                try:
+                    if file_hash not in processed_items:
+                        with open(file_path, "r", encoding="utf-8") as input_file:
+                            new_items[file_hash] = self._retrieve_generate_answer(json.load(input_file), topk=2, hierarch=False)
 
-                if (i + 1) % 2 == 0 and len(new_items):
-                    self._save_cache(cache_path, processed_items, new_items)
-            except KeyboardInterrupt:
-                print("Aborted!")
-                break
-            except Exception:
-                print(f'\n\n {file_path.name} excepted \n')
-                traceback.print_exc()
-                break
-                
-        if len(new_items):
-            self._save_cache(cache_path, processed_items, new_items)
+                    if (i + 1) % 2 == 0 and len(new_items):
+                        self._save_cache(cache_path, processed_items, new_items)
+                except KeyboardInterrupt:
+                    print("Aborted!")
+                    break
+                except Exception:
+                    print(f'\n\n {file_path.name} excepted \n')
+                    traceback.print_exc()
+                    break
+                    
+            if len(new_items):
+                self._save_cache(cache_path, processed_items, new_items)
 
-        self._dump_data(sample_path, processed_items)
-        print("Successfully built {} items.".format(len(processed_items)))
+            self._dump_data(sample_path, processed_items)
+            print("Successfully built {} items.".format(len(processed_items)))
         
     def _eval(self, folder:Path):
         input_files: List[Path] = []
