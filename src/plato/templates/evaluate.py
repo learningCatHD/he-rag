@@ -1,5 +1,17 @@
 from cardinal import Function, Template
 
+HEADER_TEMPLATE = Template(
+"Write a appropriate  for given content. The appropriate  should be a high-level overview of the article in few word.\n\n"
+"<content>{content}</content>"
+)
+
+HEADER_TEMPLATE_ZH = Template(
+"为给定的文章写一个贴切的标题，标题应该是对文章高层次概述的几个词组成。\n\n"
+"<content>{content}</content>"
+)
+
+
+
 
 SUMMARY_TEMPLATE = Template(
 "Write a breif summary for given content. The summary should be a high-level overview of the article in one sentence.\n\n"

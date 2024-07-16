@@ -13,9 +13,7 @@ with StanfordOpenIE() as client:
     for triple in triples:
 
         print(triple)
-
-
-
-    cleaned_triples = [(subject.lower(), relation.lower(), object.lower()) for (subject, relation, object) in triples]
-
-    print("Cleaned Triples:", cleaned_triples)
+        
+        header = ' '.join([triple['subject'], triple['relation'], triple["object"]])
+        
+        print(header)

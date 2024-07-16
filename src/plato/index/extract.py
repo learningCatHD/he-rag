@@ -6,8 +6,8 @@ from tenacity import retry, stop_after_attempt, wait_random_exponential
 from plato.common import Lang, LanguageDict
 
 from cardinal import ChatOpenAI, FunctionAvailable, HumanMessage
-from ..templates.evaluate import SUMMARY_TEMPLATE, GENERATE_QUESTIONS_TEMPLATE, QUESTION_FUNCTION, GENERATE_ANSWER
-from ..templates.evaluate import SUMMARY_TEMPLATE_ZH, GENERATE_QUESTIONS_TEMPLATE_ZH, QUESTION_FUNCTION_ZH, GENERATE_ANSWER_ZH, TRANSLATE_TEMPLATE
+from ..templates.evaluate import SUMMARY_TEMPLATE, GENERATE_QUESTIONS_TEMPLATE, QUESTION_FUNCTION, GENERATE_ANSWER, HEADER_TEMPLATE
+from ..templates.evaluate import SUMMARY_TEMPLATE_ZH, GENERATE_QUESTIONS_TEMPLATE_ZH, QUESTION_FUNCTION_ZH, GENERATE_ANSWER_ZH, TRANSLATE_TEMPLATE, HEADER_TEMPLATE_ZH
 from plato.utils import Convert
 from openie import StanfordOpenIE
 from plato.common import Document
@@ -30,6 +30,11 @@ class Extractor:
         self.summary_template = {
             Lang.EN: SUMMARY_TEMPLATE,
             Lang.ZH: SUMMARY_TEMPLATE_ZH
+        }
+        
+        self.header_template = {
+            Lang.EN: HEADER_TEMPLATE,
+            Lang.ZH: HEADER_TEMPLATE_ZH
         }
 
         self.generate_questions_template = {
@@ -81,11 +86,15 @@ class Extractor:
         return response
 
     def _generate_header(self, summary):
-        with StanfordOpenIE() as client:
-            triples = client.annotate(summary)
-            header = ''.join(triples[0])
-        return header
-    
+        header_template = self.summary_template[self._get_content_language(summary)]
+        query = header_template.apply(content=summary)
+        result = self.client.chat.completions.create(
+            messages=[{"role": "user", "content": query}],
+            model=self.model,
+            temperature=0.5
+        )
+        response = result.choices[0].message.content
+        return response
     
     
     def _str_list(self, content):
