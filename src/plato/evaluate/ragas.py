@@ -113,7 +113,7 @@ class Evaluator:
                     ground_truth = item["ground_truth"]
                 )
                 eval_samples.append(sample)
-                
+
         except Exception as e:
             traceback.print_exc()
             print(f"Exception happened: {str(e)}")
