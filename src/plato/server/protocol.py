@@ -26,6 +26,7 @@ class PlatoRequest(BaseModel):
     messages: List[PlatoMessage]
 
 
+
 class MentorList(BaseModel):
     created: Optional[int] = Field(default_factory=lambda: int(time.time()))
     mentors: List[str]
@@ -47,10 +48,20 @@ class RegisterInfo(BaseModel):
     career: str
     password: str
 
+class SmsRequest(BaseModel):
+    phone: str
+class SmsVerify(BaseModel):
+    ref: str
+    code: str
+class LoginInfo(BaseModel):
+    username: str
+    password: str
 class RegisterResponse(BaseModel):
-    user_id: str
-    messages: str
-
+    code:int
+    data: dict[str, str]
+class RegisterResponseStatus(BaseModel):
+    status: dict[str, str]
+    data: dict[str, str]
 class QueryRequest(BaseModel):
     uid: str
 

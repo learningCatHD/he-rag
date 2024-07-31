@@ -1,11 +1,14 @@
 import json
 from typing import Dict, Generator, List, Sequence, Tuple
-
+import random
 import uvicorn
 from fastapi import FastAPI, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
 from sse_starlette import EventSourceResponse
 from plato.server.session import UserProfile
+from plato.utils.makeToken import generate_session_token
+from plato.utils.aliyun_sms import aliyun_sms
+from plato.utils.sms_redis import store_refer_info, get_refer_info
 
 from ..mentor import AssistantMentor, ClassmateMentor, RoadmapMentor, SeniorMentor
 from .protocol import (
@@ -14,10 +17,14 @@ from .protocol import (
     PlatoResponse,
     RoadmapResponse,
     RegisterInfo,
+    SmsRequest,
+    LoginInfo,
     RegisterResponse,
     QueryRequest,
     GeneralResponse,
     Role,
+    SmsVerify,
+    RegisterResponseStatus,
 )
 
 
@@ -53,12 +60,12 @@ class Server:
     def _ask_mentor(
         mentors: Dict[str, "SeniorMentor"], messages: Sequence[Tuple[str, str]], request: "PlatoRequest"
     ) -> Generator[str, None, None]:
-        for content in mentors[request.mentor_id](messages=messages, lang=request.lang, step=request.step):
+        for content in mentors[request.mentor_id](messages=messages, lang=request.lang, step=request.step,user_id=request.user_id):
             yield json.dumps(PlatoResponse(content=content).model_dump(exclude_unset=True), ensure_ascii=False)
 
         yield json.dumps(PlatoResponse().model_dump(exclude_unset=True), ensure_ascii=False)
 
-    def _register(self, request: "RegisterInfo") -> Tuple[str, str]: 
+    def _register(self, request: "RegisterInfo") -> Tuple[str, str]:
         uid, response = self.user_profile._register(username=request.username,
                                email=request.email,
                                gender=request.gender,
@@ -66,6 +73,20 @@ class Server:
                                password=request.password
                                )
         return uid, response
+
+    def _login(self, login_info: "LoginInfo") -> Tuple[str, str, str, str]:
+
+            code,uid = self.user_profile._login(username=login_info.username,
+                                                password=login_info.password,
+                                                )
+            if code == 0:
+                token = generate_session_token(login_info.username)
+                response = "Login successful"
+            else:
+                code = '-1'
+                token = ''
+                response = "Invalid username or password"
+            return code,token,response,uid
 
     def _user_query(self, request: "QueryRequest") -> str:        
         response = self.user_profile._query(uid=request.uid)
@@ -75,8 +96,61 @@ class Server:
         response = self.user_profile._unregister(uid=request.uid)
         return response
 
+    def generate_random_hash() -> str:
+        import hashlib
+        import time
+        random_data = str(random.getrandbits(256)) + str(time.time())
+        return hashlib.sha256(random_data.encode()).hexdigest()[:16]
+
+    @staticmethod
+    def generate_code(length=4) -> str:
+        return ''.join(random.choices('0123456789', k=length))
 
     def launch(self):
+        @self.app.post("/v1/plato/verify_sms", response_model=RegisterResponseStatus, status_code=status.HTTP_200_OK)
+        async def verify_sms(request: SmsVerify):
+            ref = request.ref
+            code = request.code
+
+            if not ref or not code:
+                raise HTTPException(status_code=400, detail="Invalid reference or code")
+
+            verify_info = get_refer_info(ref)
+            if not verify_info:
+                raise HTTPException(status_code=500, detail="Failed to retrieve refer info from Redis")
+
+            if verify_info.get("code") != code:
+                raise HTTPException(status_code=401, detail="Code verification failed")
+
+            token = generate_session_token(verify_info["phone"])
+            code , uid = self.user_profile._verifysms(verify_info["phone"])
+            return {
+                "status": {"code": code, "msg": "ok"},
+                "data": {"token": token,"uid": uid}
+            }
+        @self.app.post("/v1/plato/send_sms", response_model=RegisterResponseStatus, status_code=status.HTTP_200_OK)
+        async def send_sms(request: SmsRequest):
+            phone = request.phone
+            if not phone or not phone.isdigit() or len(phone) != 11:
+                raise HTTPException(status_code=400, detail="Invalid phone number")
+
+            result = self.user_profile._sendsms(phone)
+            if result != 0:
+                raise HTTPException(status_code=400, detail="Invalid phone number")
+
+            code = Server.generate_code()
+            ref = Server.generate_random_hash()
+            # 假设 send_verify_code 是发送验证码的函数
+            sms_sent =  aliyun_sms.send_verify_code(code, phone)
+            if not sms_sent:
+                raise HTTPException(status_code=500, detail="Failed to send SMS")
+
+            # 将验证码和手机号码信息存储到 Redis 中
+            refer_info = {"code": code, "phone": phone}
+            if not store_refer_info(ref, refer_info):
+                raise HTTPException(status_code=500, detail="Failed to store refer info in Redis")
+            return {"status": {"code": "0", "msg": "ok"}, "data": {"ref": ref}}
+
         @self.app.get("/v1/plato/mentors", response_model=MentorList, status_code=status.HTTP_200_OK)
         async def list_mentors():
             return MentorList(mentors=self._mentor_ids)
@@ -84,7 +158,16 @@ class Server:
         @self.app.post("/v1/plato/register", response_model=RegisterResponse, status_code=status.HTTP_200_OK)
         async def user_register(request: RegisterInfo):
             user_id, response = self._register(request)
-            return RegisterResponse(user_id=user_id, messages=response)
+            if user_id == '-1':
+                code = "-1"
+            else:
+                code = "0"
+            return RegisterResponse(code=code, data={ "user_id":user_id, "messages":response},)
+
+        @self.app.post("/v1/plato/login", response_model=RegisterResponse, status_code=status.HTTP_200_OK)
+        async def user_login(login_info: LoginInfo):
+            code, token, response,uid = self._login(login_info)
+            return RegisterResponse(code=code, data={ "messages":response,"token":token,"uid": uid },)
 
         @self.app.post("/v1/plato/user_query", response_model=RegisterInfo, status_code=status.HTTP_200_OK)
         async def user_query(request: QueryRequest):
@@ -106,6 +189,7 @@ class Server:
         async def ask_senior(request: PlatoRequest):
             messages = self._process_request(request)
             generator = self._ask_mentor(self._senior_mentors, messages, request)
+            #print(messages,"---",request,'---',generator,'---',self._senior_mentors)
             return EventSourceResponse(generator, media_type="text/event-stream")
 
         @self.app.post("/v1/plato/assistant", response_model=PlatoResponse, status_code=status.HTTP_200_OK)
@@ -120,4 +204,11 @@ class Server:
             generator = self._ask_mentor(self._classmate_mentors, messages, request)
             return EventSourceResponse(generator, media_type="text/event-stream")
 
-        uvicorn.run(self.app, host="0.0.0.0", port=9000, workers=1)
+        uvicorn.run(
+            self.app,
+            host="0.0.0.0",
+            port=8000,
+            ssl_certfile="/root/mycert.pem",
+            ssl_keyfile="/root/mykey.pem",
+            workers=1
+        )
